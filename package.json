@@ -1,0 +1,35 @@
+{
+  "name": "devicebridge",
+  "version": "1.0.0",
+  "description": "Seamless Windows app + phone companion for instant cross-device transfer of text, files, photos, videos, links, and pasted clipboard content",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:server": "node server.js",
+    "test": "node --test test/**/*.test.js"
+  },
+  "keywords": [
+    "cross-device",
+    "transfer",
+    "clipboard",
+    "photos",
+    "videos",
+    "files",
+    "windows",
+    "phone-companion"
+  ],
+  "author": "DeviceBridge",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "multer": "^2.4.0",
+    "qrcode": "^1.5.4",
+    "uuid": "^14.0.2",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}

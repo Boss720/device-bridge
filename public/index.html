@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeviceBridge - Windows Desktop</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
+</head>
+<body class="theme-dark">
+  <div class="app-layout">
+    <!-- Top Navigation Bar -->
+    <header class="top-nav">
+      <div class="brand">
+        <div class="logo-icon">⚡</div>
+        <div class="brand-text">
+          <h1>DeviceBridge</h1>
+          <span class="subtext">Windows Hub</span>
+        </div>
+      </div>
+
+      <div class="nav-status">
+        <div class="status-indicator">
+          <span class="pulse-dot" id="statusDot"></span>
+          <span id="statusText">Connecting...</span>
+        </div>
+        <div class="device-pill" id="connectedPhonesPill" title="Connected Phone Companions">
+          <span class="icon">📱</span>
+          <span id="phoneCount">0</span> phones connected
+        </div>
+        <button id="btnOpenFolder" class="btn-subtle" title="Open Storage Folder in Windows Explorer">
+          <span class="icon">📁</span> Open Folder
+        </button>
+        <button id="btnPairingModal" class="btn-primary-gradient">
+          <span class="icon">📲</span> Connect Phone
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="main-content">
+      <!-- Left Panel: Send Center -->
+      <section class="send-section card">
+        <div class="card-header">
+          <h2>Send to Phone</h2>
+          <span class="badge">Instant Sync</span>
+        </div>
+
+        <!-- Transfer Mode Switcher -->
+        <div class="tab-pills">
+          <button class="tab-btn active" data-tab="tab-text">📝 Text / Links</button>
+          <button class="tab-btn" data-tab="tab-media">📁 Files / Media</button>
+          <button class="tab-btn" data-tab="tab-clipboard">📋 Clipboard</button>
+        </div>
+
+        <!-- Tab 1: Text / Link Composer -->
+        <div class="tab-content active" id="tab-text">
+          <div class="composer-container">
+            <textarea 
+              id="textContent" 
+              placeholder="Type a message, note, code snippet, or paste a link (e.g. https://...)..."
+              rows="5"
+            ></textarea>
+            <div class="composer-actions">
+              <button id="btnPasteToSend" class="btn-secondary" title="Paste clipboard and send immediately">
+                <span>📋 Paste & Send</span>
+              </button>
+              <button id="btnSendText" class="btn-accent">
+                <span>🚀 Send to Phone</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: File & Media Dropzone -->
+        <div class="tab-content" id="tab-media">
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="fileInput" multiple style="display:none;">
+            <div class="dropzone-icon">☁️</div>
+            <p class="dropzone-title">Drag & drop files, photos, or videos here</p>
+            <p class="dropzone-subtitle">or choose from your computer</p>
+            <div class="dropzone-buttons">
+              <button class="btn-secondary" id="btnBrowseFiles">Browse Files</button>
+              <button class="btn-secondary" id="btnBrowseMedia">Browse Photos/Videos</button>
+            </div>
+          </div>
+          <!-- Upload Progress Bar -->
+          <div class="progress-wrap" id="uploadProgressWrap" style="display:none;">
+            <div class="progress-meta">
+              <span id="uploadStatusText">Uploading files...</span>
+              <span id="uploadPercentText">0%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="uploadProgressFill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Clipboard Sync Controls -->
+        <div class="tab-content" id="tab-clipboard">
+          <div class="clipboard-box">
+            <p class="info-text">Seamlessly mirror clipboard text between this PC and your paired phone.</p>
+            
+            <div class="switch-row">
+              <label class="switch">
+                <input type="checkbox" id="chkAutoClipboard">
+                <span class="slider round"></span>
+              </label>
+              <div class="switch-meta">
+                <strong>Live Clipboard Mirroring</strong>
+                <span>Automatically sync copied text to phone companion in real time</span>
+              </div>
+            </div>
+
+            <div class="manual-clipboard-actions">
+              <button id="btnPushCurrentClipboard" class="btn-secondary full-width">
+                <span>📋 Send Current PC Clipboard to Phone</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Transferred Content Feed -->
+      <section class="feed-section card">
+        <div class="feed-header">
+          <div class="feed-title-wrap">
+            <h2>Activity Feed</h2>
+            <span class="item-count-badge" id="feedCount">0 items</span>
+          </div>
+
+          <div class="feed-controls">
+            <!-- Filter Pills -->
+            <div class="filter-pills">
+              <button class="filter-btn active" data-filter="all">All</button>
+              <button class="filter-btn" data-filter="photo">Photos</button>
+              <button class="filter-btn" data-filter="video">Videos</button>
+              <button class="filter-btn" data-filter="file">Files</button>
+              <button class="filter-btn" data-filter="text">Text & Links</button>
+            </div>
+            <button id="btnClearAll" class="btn-danger-outline" title="Clear all history">Clear</button>
+          </div>
+        </div>
+
+        <!-- Items Container -->
+        <div class="feed-scroll-area" id="feedList">
+          <!-- Empty State -->
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">📱 ⇄ 🖥️</div>
+            <h3>No transfers yet</h3>
+            <p>Connect your phone using the QR code to seamlessly transfer photos, videos, files, links, and pasted text.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Pairing Modal (QR Code & LAN Info) -->
+  <div class="modal-backdrop" id="pairingModal" style="display:none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Connect Phone Companion</h3>
+        <button class="btn-close" id="btnClosePairingModal">✕</button>
+      </div>
+      <div class="modal-body pairing-body">
+        <div class="qr-container">
+          <img id="qrImage" src="" alt="Scan QR Code to Connect">
+        </div>
+        <div class="pairing-instructions">
+          <p class="step"><strong>1. Scan with phone:</strong> Point your iPhone or Android camera at this QR code.</p>
+          <p class="step"><strong>2. Or open URL in mobile browser:</strong></p>
+          <div class="url-copy-box">
+            <input type="text" id="companionUrlInput" readonly>
+            <button id="btnCopyUrl" class="btn-secondary">Copy</button>
+          </div>
+          <p class="hint-text">⚠️ Ensure your phone and PC are connected to the same Wi-Fi / LAN network.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox Modal for Fullscreen Photo View -->
+  <div class="modal-backdrop" id="lightboxModal" style="display:none;">
+    <div class="lightbox-dialog">
+      <button class="btn-close lightbox-close" id="btnCloseLightbox">✕</button>
+      <div class="lightbox-image-container">
+        <img id="lightboxImg" src="" alt="Enlarged Preview">
+      </div>
+      <div class="lightbox-footer">
+        <span id="lightboxCaption">Photo Preview</span>
+        <div class="lightbox-buttons">
+          <a id="lightboxDownloadBtn" href="" download class="btn-secondary">Download</a>
+          <button id="lightboxRevealBtn" class="btn-accent">Reveal in Explorer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-stack" id="toastStack"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

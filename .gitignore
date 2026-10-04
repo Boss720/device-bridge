@@ -1,0 +1,5 @@
+node_modules/
+received_files/
+test_storage/
+dist/
+*.log

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#090d16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>DeviceBridge - Phone Companion</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="companion.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
+</head>
+<body>
+  <div class="mobile-layout">
+    <!-- Header -->
+    <header class="mobile-header">
+      <div class="header-left">
+        <div class="status-indicator">
+          <span class="status-dot" id="statusDot"></span>
+          <span class="status-text" id="statusText">Connecting...</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="device-badge" id="btnEditDeviceName">
+          <span class="device-icon">📱</span>
+          <span id="deviceNameLabel">My Phone</span>
+          <span class="edit-icon">✏️</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Upload Banner -->
+    <div class="upload-progress-banner" id="uploadBanner" style="display:none;">
+      <div class="upload-meta">
+        <span id="uploadBannerText">Uploading item...</span>
+        <span id="uploadPercent">0%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="uploadBarFill"></div>
+      </div>
+    </div>
+
+    <!-- Quick Action Grid -->
+    <section class="action-grid-section">
+      <h2 class="section-label">Quick Send to Windows PC</h2>
+      
+      <!-- Hidden File Inputs -->
+      <input type="file" id="inputCameraPhoto" accept="image/*" capture="environment" style="display:none;">
+      <input type="file" id="inputCameraVideo" accept="video/*" capture="environment" style="display:none;">
+      <input type="file" id="inputGalleryMedia" accept="image/*,video/*" multiple style="display:none;">
+      <input type="file" id="inputDocs" multiple style="display:none;">
+
+      <div class="action-grid">
+        <!-- 1. Take Photo -->
+        <button class="action-card" id="btnSnapPhoto">
+          <div class="card-icon gradient-photo">📸</div>
+          <span class="card-title">Camera Photo</span>
+          <span class="card-desc">Snap & send</span>
+        </button>
+
+        <!-- 2. Record Video -->
+        <button class="action-card" id="btnRecordVideo">
+          <div class="card-icon gradient-video">🎥</div>
+          <span class="card-title">Record Video</span>
+          <span class="card-desc">Shoot & stream</span>
+        </button>
+
+        <!-- 3. Photo & Video Gallery -->
+        <button class="action-card" id="btnPickGallery">
+          <div class="card-icon gradient-gallery">🖼️</div>
+          <span class="card-title">Media Library</span>
+          <span class="card-desc">Photos & Videos</span>
+        </button>
+
+        <!-- 4. Files & Documents -->
+        <button class="action-card" id="btnPickDocs">
+          <div class="card-icon gradient-files">📁</div>
+          <span class="card-title">Files & Docs</span>
+          <span class="card-desc">Any document</span>
+        </button>
+
+        <!-- 5. Paste Clipboard -->
+        <button class="action-card" id="btnPasteClipboard">
+          <div class="card-icon gradient-paste">📋</div>
+          <span class="card-title">Paste & Send</span>
+          <span class="card-desc">From clipboard</span>
+        </button>
+
+        <!-- 6. Share Link / Note -->
+        <button class="action-card" id="btnOpenTextModal">
+          <div class="card-icon gradient-link">🔗</div>
+          <span class="card-title">Send Note/Link</span>
+          <span class="card-desc">Type message</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Transferred Feed -->
+    <section class="mobile-feed-section">
+      <div class="feed-section-header">
+        <h2 class="section-label">Transferred Content</h2>
+        <span class="item-count" id="feedCount">0 items</span>
+      </div>
+
+      <div class="feed-list" id="feedList">
+        <div class="empty-feed" id="emptyState">
+          <div class="empty-art">📱 ⇄ 🖥️</div>
+          <h3>Ready to transfer</h3>
+          <p>Choose an action above or send content from your Windows PC to see it here.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom Quick Text Input Bar -->
+    <div class="bottom-composer">
+      <div class="composer-inner">
+        <input 
+          type="text" 
+          id="quickInput" 
+          placeholder="Send a note, link, or message..." 
+          autocomplete="off"
+        >
+        <button id="btnQuickSend" class="btn-send-pill">
+          <span>Send</span> 🚀
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Device Nickname Prompt Modal -->
+  <div class="mobile-modal" id="deviceModal" style="display:none;">
+    <div class="modal-card">
+      <h3>Change Device Name</h3>
+      <p class="modal-sub">How this phone appears on your Windows PC</p>
+      <input type="text" id="deviceNameInput" placeholder="e.g. Alex's iPhone 15" maxlength="30">
+      <div class="modal-btn-row">
+        <button class="btn-modal-cancel" id="btnCancelDeviceName">Cancel</button>
+        <button class="btn-modal-save" id="btnSaveDeviceName">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Note/Link Full Modal -->
+  <div class="mobile-modal" id="textModal" style="display:none;">
+    <div class="modal-card">
+      <h3>Send Note or Link</h3>
+      <p class="modal-sub">Sent instantly to your Windows PC</p>
+      <textarea id="modalTextArea" placeholder="Type text, note, or paste a URL..." rows="4"></textarea>
+      <div class="modal-btn-row">
+        <button class="btn-modal-cancel" id="btnCancelTextModal">Cancel</button>
+        <button class="btn-modal-save" id="btnSendTextModal">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Toast -->
+  <div class="mobile-toast" id="mobileToast" style="display:none;"></div>
+
+  <script src="companion.js"></script>
+</body>
+</html>
