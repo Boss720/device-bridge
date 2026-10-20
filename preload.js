@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('desktopBridge', {
   revealInFolder: (filename) => ipcRenderer.invoke('reveal-in-folder', filename),
   openFolder: () => ipcRenderer.invoke('open-folder'),
   readClipboard: () => ipcRenderer.invoke('read-clipboard'),
+  readClipboardImage: () => ipcRenderer.invoke('read-clipboard-image'),
   writeClipboard: (text) => ipcRenderer.invoke('write-clipboard', text),
   showNotification: (options) => ipcRenderer.invoke('show-notification', options),
   getServerInfo: () => ipcRenderer.invoke('get-server-info')

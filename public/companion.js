@@ -41,6 +41,21 @@
   const uploadPercent = document.getElementById('uploadPercent');
   const uploadBarFill = document.getElementById('uploadBarFill');
 
+  // Clipboard Sync Banner Elements
+  const clipboardSyncBanner = document.getElementById('clipboardSyncBanner');
+  const clipboardSnippet = document.getElementById('clipboardSnippet');
+  const btnCopySyncedClipboard = document.getElementById('btnCopySyncedClipboard');
+  const btnDismissClipboard = document.getElementById('btnDismissClipboard');
+  let currentSyncedClipboard = '';
+
+  // Lightbox Elements
+  const mobileLightboxModal = document.getElementById('mobileLightboxModal');
+  const mobileLightboxImg = document.getElementById('mobileLightboxImg');
+  const mobileLightboxCaption = document.getElementById('mobileLightboxCaption');
+  const mobileLightboxDownload = document.getElementById('mobileLightboxDownload');
+  const btnCloseMobileLightbox = document.getElementById('btnCloseMobileLightbox');
+  const btnMobileClearAll = document.getElementById('btnMobileClearAll');
+
   // Feed
   const feedList = document.getElementById('feedList');
   const feedCount = document.getElementById('feedCount');
@@ -139,7 +154,7 @@
 
       case 'clipboard_sync':
         vibrate();
-        showToast('📋 Clipboard synced from PC');
+        handleReceivedClipboard(msg.payload.text, msg.payload.from);
         break;
 
       case 'item_deleted':
@@ -263,9 +278,59 @@
     });
   });
 
-  // Paste from phone clipboard
+  // Handle received clipboard sync
+  function handleReceivedClipboard(text, from) {
+    if (!text) return;
+    currentSyncedClipboard = text;
+    if (clipboardSnippet) clipboardSnippet.textContent = text;
+    if (clipboardSyncBanner) clipboardSyncBanner.style.display = 'flex';
+    showToast(`📋 Clipboard synced from ${from}`);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  }
+
+  if (btnCopySyncedClipboard) {
+    btnCopySyncedClipboard.addEventListener('click', async () => {
+      vibrate();
+      try {
+        await navigator.clipboard.writeText(currentSyncedClipboard);
+        showToast('Copied to phone clipboard!');
+      } catch (_) {
+        showToast('Tap & hold to copy text');
+      }
+    });
+  }
+
+  if (btnDismissClipboard) {
+    btnDismissClipboard.addEventListener('click', () => {
+      clipboardSyncBanner.style.display = 'none';
+    });
+  }
+
+  // Paste from phone clipboard (supports images and text)
   btnPasteClipboard.addEventListener('click', async () => {
     vibrate();
+    // 1. Try reading clipboard items (images)
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const cItems = await navigator.clipboard.read();
+        for (const item of cItems) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              const ext = type.includes('png') ? '.png' : '.jpg';
+              const file = new File([blob], `pasted_mobile_${Date.now()}${ext}`, { type });
+              uploadFiles([file]);
+              showToast('Pasting image from clipboard...');
+              return;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try reading clipboard text
     try {
       if (navigator.clipboard && navigator.clipboard.readText) {
         const text = await navigator.clipboard.readText();
@@ -281,6 +346,17 @@
     textModal.style.display = 'flex';
     modalTextArea.focus();
     showToast('Paste text below and tap Send');
+  });
+
+  // Global paste handler on companion
+  window.addEventListener('paste', (e) => {
+    const data = e.clipboardData;
+    if (!data) return;
+    if (data.files && data.files.length > 0) {
+      e.preventDefault();
+      uploadFiles(Array.from(data.files));
+      showToast('Pasting from clipboard...');
+    }
   });
 
   // Send Note/Link Modal
@@ -387,17 +463,30 @@
     const top = document.createElement('div');
     top.className = 'card-top';
     top.innerHTML = `
-      <span class="sender-tag ${isFromPc ? 'from-pc' : 'from-phone'}">
-        ${isFromPc ? '🖥️ ' + (item.deviceName || 'Windows PC') : '📱 ' + (item.deviceName || 'Phone')}
-      </span>
-      <span class="time-tag">${formatTime(item.createdAt)}</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="sender-tag ${isFromPc ? 'from-pc' : 'from-phone'}">
+          ${isFromPc ? '🖥️ ' + (item.deviceName || 'Windows PC') : '📱 ' + (item.deviceName || 'Phone')}
+        </span>
+        <span class="time-tag">${formatTime(item.createdAt)}</span>
+      </div>
+      <button class="btn-delete-mobile" title="Delete">🗑️</button>
     `;
+
+    top.querySelector('.btn-delete-mobile').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      vibrate();
+      await deleteMobileItem(item.id);
+    });
     card.appendChild(top);
 
     if (item.type === 'photo') {
       const photoDiv = document.createElement('div');
       photoDiv.className = 'mobile-photo-content';
+      photoDiv.style.cursor = 'pointer';
       photoDiv.innerHTML = `<img src="${item.url}" alt="${escapeHtml(item.originalName)}">`;
+      photoDiv.addEventListener('click', () => {
+        openMobileLightbox(item);
+      });
       card.appendChild(photoDiv);
 
       const actions = document.createElement('div');
@@ -484,6 +573,67 @@
     }
 
     return card;
+  }
+
+  // Delete item on companion
+  async function deleteMobileItem(id) {
+    try {
+      const res = await fetch(`/api/items/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        items = items.filter(i => i.id !== id);
+        renderFeed();
+        showToast('Item deleted');
+      }
+    } catch (_) {
+      showToast('Failed to delete item');
+    }
+  }
+
+  // Clear all items on companion
+  async function clearAllMobileItems() {
+    try {
+      const res = await fetch('/api/items', { method: 'DELETE' });
+      if (res.ok) {
+        items = [];
+        renderFeed();
+        showToast('All items cleared');
+      }
+    } catch (_) {
+      showToast('Failed to clear items');
+    }
+  }
+
+  if (btnMobileClearAll) {
+    btnMobileClearAll.addEventListener('click', () => {
+      if (items.length === 0) return;
+      if (confirm('Clear all transferred items from feed?')) {
+        clearAllMobileItems();
+      }
+    });
+  }
+
+  // Mobile Lightbox Modal
+  function openMobileLightbox(item) {
+    if (!mobileLightboxModal) return;
+    mobileLightboxImg.src = item.url;
+    mobileLightboxCaption.textContent = `${item.originalName} (${item.formattedSize || ''})`;
+    mobileLightboxDownload.href = `${item.url}?download=1`;
+    mobileLightboxDownload.setAttribute('download', item.originalName);
+    mobileLightboxModal.style.display = 'flex';
+  }
+
+  if (btnCloseMobileLightbox) {
+    btnCloseMobileLightbox.addEventListener('click', () => {
+      mobileLightboxModal.style.display = 'none';
+    });
+  }
+
+  if (mobileLightboxModal) {
+    mobileLightboxModal.addEventListener('click', (e) => {
+      if (e.target === mobileLightboxModal) {
+        mobileLightboxModal.style.display = 'none';
+      }
+    });
   }
 
   connectWebSocket();

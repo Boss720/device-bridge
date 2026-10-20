@@ -358,4 +358,152 @@ describe('DeviceBridge Core Backend & API Suite', () => {
     assert.strictEqual(status, 201);
     assert.strictEqual(body.item.text, text);
   });
+
+  test('Accurate MIME Content-Type and Content-Disposition headers on file streaming and download', async () => {
+    const formData = new FormData();
+    const photoBlob = new Blob(['sample-jpeg-binary'], { type: 'image/jpeg' });
+    const videoBlob = new Blob(['sample-mp4-binary-stream'], { type: 'video/mp4' });
+    formData.append('files', photoBlob, 'vacation photo.jpg');
+    formData.append('files', videoBlob, 'family video.mp4');
+
+    const upRes = await fetch(`${baseUrl}/api/items/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    const { items: upItems } = await upRes.json();
+    const photo = upItems.find(i => i.originalName === 'vacation photo.jpg');
+    const video = upItems.find(i => i.originalName === 'family video.mp4');
+
+    // 1. Verify photo Content-Type
+    const photoStreamRes = await fetch(`${baseUrl}${photo.url}`);
+    assert.strictEqual(photoStreamRes.status, 200);
+    assert.ok(photoStreamRes.headers.get('content-type').includes('image/jpeg'));
+
+    // 2. Verify photo download Content-Disposition
+    const photoDlRes = await fetch(`${baseUrl}${photo.url}?download=1`);
+    assert.strictEqual(photoDlRes.status, 200);
+    const photoDisp = photoDlRes.headers.get('content-disposition');
+    assert.ok(photoDisp);
+    assert.ok(photoDisp.includes('attachment'));
+    assert.ok(photoDisp.includes('filename*=UTF-8\'\''));
+
+    // 3. Verify video Range request Content-Type and Content-Range
+    const videoStreamRes = await fetch(`${baseUrl}${video.url}`, {
+      headers: { Range: 'bytes=0-5' }
+    });
+    assert.strictEqual(videoStreamRes.status, 206);
+    assert.ok(videoStreamRes.headers.get('content-type').includes('video/mp4'));
+    assert.strictEqual(videoStreamRes.headers.get('content-range'), `bytes 0-5/${video.size}`);
+  });
+
+  test('Upload handles pasted screenshot blob without explicit filename or extension', async () => {
+    const formData = new FormData();
+    const screenshotBlob = new Blob(['png-screenshot-bytes'], { type: 'image/png' });
+    // Simulate mobile browser or clipboard upload with name 'blob'
+    formData.append('files', screenshotBlob, 'blob');
+
+    const upRes = await fetch(`${baseUrl}/api/items/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    const { items: upItems } = await upRes.json();
+    assert.strictEqual(upItems.length, 1);
+    const item = upItems[0];
+    assert.strictEqual(item.type, 'photo');
+    assert.ok(item.fileName.endsWith('.png'));
+    assert.ok(item.originalName.endsWith('.png'));
+
+    // Verify it streams with image/png
+    const streamRes = await fetch(`${baseUrl}${item.url}`);
+    assert.strictEqual(streamRes.status, 200);
+    assert.ok(streamRes.headers.get('content-type').includes('image/png'));
+  });
+
+  test('Metadata persistence across server restart', async () => {
+    // Post an item
+    const note = `Persistent note ${Date.now()}`;
+    await api('/api/items/text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: note, sender: 'Windows' })
+    });
+
+    // Create a second app instance pointing to the same TEST_DIR
+    const secondApp = createBridgeApp({ storageDir: TEST_DIR });
+    const secondServer = secondApp.server;
+
+    await new Promise((resolve) => {
+      secondServer.listen(0, '127.0.0.1', resolve);
+    });
+    const secondPort = secondServer.address().port;
+
+    const listRes = await fetch(`http://127.0.0.1:${secondPort}/api/items`);
+    const listData = await listRes.json();
+    const found = listData.items.some(i => i.text === note);
+
+    await new Promise((resolve) => secondServer.close(resolve));
+    assert.ok(found, 'Item should persist in second app instance initialized from same storageDir');
+  });
+
+  test('DELETE /api/items (Clear All) cleans up stored files on disk', async () => {
+    // Upload a test file
+    const formData = new FormData();
+    const blob = new Blob(['cleanup test content'], { type: 'text/plain' });
+    formData.append('files', blob, 'cleanup_file.txt');
+
+    const upRes = await fetch(`${baseUrl}/api/items/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    const { items: upItems } = await upRes.json();
+    const uploaded = upItems[0];
+    const diskPath = path.join(TEST_DIR, uploaded.fileName);
+    assert.strictEqual(fs.existsSync(diskPath), true);
+
+    // Call Clear All
+    const clearRes = await fetch(`${baseUrl}/api/items`, { method: 'DELETE' });
+    assert.strictEqual(clearRes.status, 200);
+
+    // Verify file is unlinked on disk
+    assert.strictEqual(fs.existsSync(diskPath), false);
+  });
+
+  test('WebSocket clipboard_sync with saveToFeed adds clipboard item to feed and broadcasts new_item', async () => {
+    const wsClient1 = new WebSocket(wsUrl);
+    const wsClient2 = new WebSocket(wsUrl);
+
+    await Promise.all([
+      new Promise(r => wsClient1.on('open', r)),
+      new Promise(r => wsClient2.on('open', r))
+    ]);
+
+    const ws2Events = [];
+    wsClient2.on('message', data => {
+      ws2Events.push(JSON.parse(data.toString()));
+    });
+
+    const clipText = 'Synced clipboard text with save to feed!';
+    wsClient1.send(JSON.stringify({
+      type: 'clipboard_sync',
+      text: clipText,
+      saveToFeed: true
+    }));
+
+    await new Promise(r => setTimeout(r, 100));
+
+    wsClient1.close();
+    wsClient2.close();
+
+    // Verify received clipboard_sync and new_item
+    const hasSync = ws2Events.some(e => e.type === 'clipboard_sync' && e.payload.text === clipText);
+    const hasNewItem = ws2Events.some(e => e.type === 'new_item' && e.payload.type === 'clipboard' && e.payload.text === clipText);
+
+    assert.ok(hasSync, 'Should broadcast clipboard_sync');
+    assert.ok(hasNewItem, 'Should broadcast new_item when saveToFeed is true');
+
+    // Verify item is in list
+    const itemsRes = await api('/api/items');
+    assert.ok(itemsRes.body.items.some(i => i.text === clipText && i.type === 'clipboard'));
+  });
 });
+

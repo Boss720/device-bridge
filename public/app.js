@@ -257,32 +257,109 @@
     sendTextItem(textContent.value);
   });
 
-  // Paste & Send
+  // Helper: Convert base64 data to Blob
+  function b64toBlob(b64Data, contentType = 'image/png') {
+    const byteCharacters = atob(b64Data);
+    const byteArrays = [];
+    const sliceSize = 512;
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+      const slice = byteCharacters.slice(offset, offset + sliceSize);
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        byteNumbers[i] = slice.charCodeAt(i);
+      }
+      byteArrays.push(new Uint8Array(byteNumbers));
+    }
+    return new Blob(byteArrays, { type: contentType });
+  }
+
+  // Paste & Send (supports screenshots, images, links, and text)
   async function pasteAndSend() {
+    // 1. Check for clipboard image in Electron desktopBridge
+    if (window.desktopBridge && window.desktopBridge.readClipboardImage) {
+      try {
+        const imgData = await window.desktopBridge.readClipboardImage();
+        if (imgData && imgData.base64) {
+          const blob = b64toBlob(imgData.base64, imgData.mime || 'image/png');
+          const file = new File([blob], `screenshot_${Date.now()}.png`, { type: imgData.mime || 'image/png' });
+          showToast('Pasting image from clipboard...', 'info');
+          uploadFiles([file]);
+          return;
+        }
+      } catch (e) {
+        console.warn('Error reading desktop clipboard image:', e);
+      }
+    }
+
+    // 2. Check for clipboard image in standard Web Clipboard API
+    if (navigator.clipboard && navigator.clipboard.read) {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              const ext = type.includes('png') ? '.png' : '.jpg';
+              const file = new File([blob], `screenshot_${Date.now()}${ext}`, { type });
+              showToast('Pasting image from clipboard...', 'info');
+              uploadFiles([file]);
+              return;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fallback to clipboard text / link
     let clipboardText = '';
     if (window.desktopBridge && window.desktopBridge.readClipboard) {
       clipboardText = await window.desktopBridge.readClipboard();
-    } else {
+    } else if (navigator.clipboard && navigator.clipboard.readText) {
       try {
         clipboardText = await navigator.clipboard.readText();
       } catch (_) {}
     }
 
     if (clipboardText && clipboardText.trim()) {
-      sendTextItem(clipboardText.trim());
+      sendTextItem(clipboardText.trim(), 'clipboard');
     } else {
-      showToast('Clipboard is empty or does not contain text');
+      showToast('Clipboard is empty');
     }
   }
 
   btnPasteToSend.addEventListener('click', pasteAndSend);
 
-  // Global Ctrl+V to paste into text input or trigger send
-  window.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-      if (document.activeElement !== textContent) {
-        // If not already typing in the textarea, focus it
-        textContent.focus();
+  // Global window Paste (Ctrl+V) handler for files and screenshots
+  window.addEventListener('paste', (e) => {
+    const clipboardData = e.clipboardData || window.clipboardData;
+    if (!clipboardData) return;
+
+    // Check files
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      e.preventDefault();
+      uploadFiles(Array.from(clipboardData.files));
+      showToast(`Pasted ${clipboardData.files.length} item(s) from clipboard`, 'success');
+      return;
+    }
+
+    // Check clipboard items for image blobs
+    if (clipboardData.items) {
+      const imageFiles = [];
+      for (const item of clipboardData.items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            const ext = file.type.includes('png') ? '.png' : '.jpg';
+            const renamed = new File([file], `screenshot_${Date.now()}${ext}`, { type: file.type });
+            imageFiles.push(renamed);
+          }
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        uploadFiles(imageFiles);
+        showToast('Pasted screenshot from clipboard', 'success');
+        return;
       }
     }
   });

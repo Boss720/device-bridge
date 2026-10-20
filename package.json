@@ -6,7 +6,59 @@
   "scripts": {
     "start": "electron .",
     "start:server": "node server.js",
-    "test": "node --test test/**/*.test.js"
+    "test": "node --test test/**/*.test.js",
+    "build:win": "electron-builder --win",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.devicebridge.app",
+    "productName": "DeviceBridge",
+    "copyright": "Copyright © 2026 DeviceBridge",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "executableName": "DeviceBridge"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeviceBridge",
+      "uninstallDisplayName": "DeviceBridge",
+      "artifactName": "DeviceBridge-Setup-${version}-x64.${ext}"
+    },
+    "portable": {
+      "artifactName": "DeviceBridge-${version}-portable-x64.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Boss720",
+      "repo": "device-bridge"
+    }
   },
   "keywords": [
     "cross-device",
@@ -30,6 +82,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
-    "electron": "^44.5.1"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
   }
 }

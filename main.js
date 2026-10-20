@@ -8,9 +8,35 @@ let bridgeServer = null;
 let serverPort = DEFAULT_PORT;
 let storageDir = '';
 
+function getAppStorageDir() {
+  if (process.env.STORAGE_DIR) {
+    return process.env.STORAGE_DIR;
+  }
+  try {
+    const downloadsDir = app.getPath('downloads');
+    const targetDir = path.join(downloadsDir, 'DeviceBridge');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    return targetDir;
+  } catch (_) {
+    try {
+      const userDataDir = app.getPath('userData');
+      const targetDir = path.join(userDataDir, 'received_files');
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      return targetDir;
+    } catch (_) {
+      return path.join(process.cwd(), 'received_files');
+    }
+  }
+}
+
 function startServer() {
   return new Promise((resolve, reject) => {
-    const { server, STORAGE_DIR } = createBridgeApp();
+    const appStorage = getAppStorageDir();
+    const { server, STORAGE_DIR } = createBridgeApp({ storageDir: appStorage });
     bridgeServer = server;
     storageDir = STORAGE_DIR;
 
@@ -79,6 +105,20 @@ ipcMain.handle('open-folder', async () => {
 
 ipcMain.handle('read-clipboard', async () => {
   return clipboard.readText();
+});
+
+ipcMain.handle('read-clipboard-image', async () => {
+  const img = clipboard.readImage();
+  if (!img.isEmpty()) {
+    const pngBuffer = img.toPNG();
+    return {
+      mime: 'image/png',
+      dataUrl: img.toDataURL(),
+      base64: pngBuffer.toString('base64'),
+      size: pngBuffer.length
+    };
+  }
+  return null;
 });
 
 ipcMain.handle('write-clipboard', async (event, text) => {

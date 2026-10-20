@@ -96,11 +96,29 @@
       </div>
     </section>
 
+    <!-- Clipboard Sync Alert Banner -->
+    <div class="clipboard-sync-banner" id="clipboardSyncBanner" style="display:none;">
+      <div class="banner-content">
+        <span class="banner-icon">📋</span>
+        <div class="banner-text-wrap">
+          <div class="banner-title">Copied on PC</div>
+          <div class="banner-snippet" id="clipboardSnippet"></div>
+        </div>
+      </div>
+      <div class="banner-actions">
+        <button class="btn-banner-copy" id="btnCopySyncedClipboard">Copy</button>
+        <button class="btn-banner-dismiss" id="btnDismissClipboard">✕</button>
+      </div>
+    </div>
+
     <!-- Transferred Feed -->
     <section class="mobile-feed-section">
       <div class="feed-section-header">
         <h2 class="section-label">Transferred Content</h2>
-        <span class="item-count" id="feedCount">0 items</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="item-count" id="feedCount">0 items</span>
+          <button id="btnMobileClearAll" class="btn-clear-subtle" title="Clear all history">Clear</button>
+        </div>
       </div>
 
       <div class="feed-list" id="feedList">
@@ -150,6 +168,18 @@
       <div class="modal-btn-row">
         <button class="btn-modal-cancel" id="btnCancelTextModal">Cancel</button>
         <button class="btn-modal-save" id="btnSendTextModal">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Lightbox Modal -->
+  <div class="mobile-modal mobile-lightbox" id="mobileLightboxModal" style="display:none;">
+    <div class="lightbox-inner">
+      <button class="btn-close-lightbox" id="btnCloseMobileLightbox">✕</button>
+      <img id="mobileLightboxImg" src="" alt="Enlarged Photo">
+      <div class="lightbox-caption-row">
+        <span id="mobileLightboxCaption"></span>
+        <a id="mobileLightboxDownload" href="" download class="btn-mobile-action">Save Photo</a>
       </div>
     </div>
   </div>

@@ -12,15 +12,31 @@ const { exec } = require('child_process');
 
 // Configuration
 const DEFAULT_PORT = process.env.PORT || 53317;
-const STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, 'received_files');
-
-// Ensure storage directory exists
-if (!fs.existsSync(STORAGE_DIR)) {
-  fs.mkdirSync(STORAGE_DIR, { recursive: true });
+let STORAGE_DIR = process.env.STORAGE_DIR;
+if (!STORAGE_DIR) {
+  try {
+    const electron = require('electron');
+    const electronApp = electron.app || (electron.remote && electron.remote.app);
+    if (electronApp && typeof electronApp.getPath === 'function') {
+      STORAGE_DIR = path.join(electronApp.getPath('downloads'), 'DeviceBridge');
+    }
+  } catch (_) {}
+}
+if (!STORAGE_DIR) {
+  STORAGE_DIR = path.join(process.cwd(), 'received_files');
 }
 
-// In-memory store of shared items
-let items = [];
+// Ensure storage directory exists
+try {
+  if (!fs.existsSync(STORAGE_DIR)) {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+  }
+} catch (e) {
+  // Silent fallback if running in read-only environment
+}
+
+// In-memory store fallback
+let defaultItems = [];
 
 // Helper: Format bytes into human readable string
 function formatBytes(bytes) {
@@ -31,6 +47,57 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+// Helper: MIME type mapping
+const MIME_TYPES = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
+  '.m4v': 'video/mp4',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.json': 'application/json',
+  '.zip': 'application/zip',
+  '.tar': 'application/x-tar',
+  '.gz': 'application/gzip',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+};
+
+function getMimeType(filePathOrName) {
+  const ext = path.extname(filePathOrName).toLowerCase();
+  return MIME_TYPES[ext] || 'application/octet-stream';
+}
+
+function getExtFromMime(mime) {
+  if (!mime) return '';
+  for (const [ext, m] of Object.entries(MIME_TYPES)) {
+    if (m === mime) return ext;
+  }
+  if (mime.startsWith('image/')) return '.' + mime.split('/')[1].replace('jpeg', 'jpg');
+  if (mime.startsWith('video/')) return '.' + mime.split('/')[1];
+  return '';
+}
+
 // Helper: Detect local network IPs
 function getLocalNetworkAddresses() {
   const interfaces = os.networkInterfaces();
@@ -38,8 +105,8 @@ function getLocalNetworkAddresses() {
 
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      // IPv4 and not loopback
-      if (iface.family === 'IPv4' && !iface.internal) {
+      // IPv4, not internal loopback, not link-local (169.254.x.x)
+      if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('169.254.')) {
         addresses.push({
           interface: name,
           ip: iface.address
@@ -48,15 +115,33 @@ function getLocalNetworkAddresses() {
     }
   }
 
-  // Prioritize typical Wi-Fi / LAN IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+  // Prioritize physical Wi-Fi / Ethernet, deprioritize virtual/tunnel adapters
   addresses.sort((a, b) => {
-    const isPrivate = (ip) =>
-      ip.startsWith('192.168.') ||
-      ip.startsWith('10.') ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip);
-    if (isPrivate(a.ip) && !isPrivate(b.ip)) return -1;
-    if (!isPrivate(a.ip) && isPrivate(b.ip)) return 1;
-    return 0;
+    const score = (addr) => {
+      let s = 0;
+      const lowerName = addr.interface.toLowerCase();
+      const ip = addr.ip;
+
+      // Penalize virtual / VPN adapters
+      if (/tailscale|vethernet|virtual|vmware|wsl|hyper-v|docker|tap|tun/i.test(lowerName)) {
+        s -= 100;
+      }
+      // Prioritize Wi-Fi and physical LAN
+      if (/wi-fi|wifi|wireless|wlan/i.test(lowerName)) {
+        s += 60;
+      } else if (/ethernet|local area connection/i.test(lowerName)) {
+        s += 40;
+      }
+
+      // Private LAN addresses
+      if (ip.startsWith('192.168.')) s += 20;
+      else if (ip.startsWith('10.')) s += 15;
+      else if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) s += 10;
+
+      return s;
+    };
+
+    return score(b) - score(a);
   });
 
   return addresses;
@@ -73,9 +158,9 @@ function isUrl(string) {
 }
 
 // Helper: Categorize mime types
-function categorizeFileType(mimetype, originalName) {
+function categorizeFileType(mimetype = '', originalName = '') {
   const ext = path.extname(originalName).toLowerCase();
-  if (mimetype.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic'].includes(ext)) {
+  if (mimetype.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.ico'].includes(ext)) {
     return 'photo';
   }
   if (mimetype.startsWith('video/') || ['.mp4', '.webm', '.mov', '.mkv', '.avi', '.m4v'].includes(ext)) {
@@ -84,10 +169,39 @@ function categorizeFileType(mimetype, originalName) {
   return 'file';
 }
 
+const { execFile } = require('child_process');
+
 function createBridgeApp(customOptions = {}) {
   const storageDir = customOptions.storageDir || process.env.STORAGE_DIR || STORAGE_DIR;
   if (!fs.existsSync(storageDir)) {
     fs.mkdirSync(storageDir, { recursive: true });
+  }
+
+  // Scoped store of shared items with persistence
+  const metaFilePath = path.join(storageDir, 'items_meta.json');
+  let items = [];
+  if (fs.existsSync(metaFilePath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(metaFilePath, 'utf8'));
+      if (Array.isArray(data)) {
+        items = data.filter(it => {
+          if (it.fileName) {
+            return fs.existsSync(path.join(storageDir, it.fileName));
+          }
+          return true;
+        });
+      }
+    } catch (_) {
+      items = [];
+    }
+  }
+
+  function saveItemsMeta() {
+    try {
+      fs.writeFileSync(metaFilePath, JSON.stringify(items, null, 2), 'utf8');
+    } catch (err) {
+      console.error('Failed to write items metadata:', err);
+    }
   }
 
   const app = express();
@@ -108,8 +222,16 @@ function createBridgeApp(customOptions = {}) {
     },
     filename: (req, file, cb) => {
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e6);
-      const ext = path.extname(file.originalname);
-      const baseName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_\-]/g, '_');
+      let ext = path.extname(file.originalname);
+      if (!ext) {
+        ext = getExtFromMime(file.mimetype) || '';
+      }
+      let baseName = path.basename(file.originalname, path.extname(file.originalname))
+        .replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF\-]/g, '_')
+        .trim();
+      if (!baseName || baseName === '_' || /^_+$/.test(baseName)) {
+        baseName = file.mimetype.startsWith('image/') ? 'photo' : (file.mimetype.startsWith('video/') ? 'video' : 'upload');
+      }
       cb(null, `${baseName}-${uniqueSuffix}${ext}`);
     }
   });
@@ -177,9 +299,26 @@ function createBridgeApp(customOptions = {}) {
           });
         } else if (msg.type === 'clipboard_sync') {
           // Received live clipboard text from one device to forward
+          const text = msg.text;
+          const from = clientInfo.deviceName || 'Companion';
+
+          if (msg.saveToFeed && text && typeof text === 'string' && text.trim().length > 0) {
+            const clipItem = {
+              id: uuidv4(),
+              type: 'clipboard',
+              text: text.trim(),
+              createdAt: new Date().toISOString(),
+              sender: from,
+              deviceName: from
+            };
+            items.unshift(clipItem);
+            saveItemsMeta();
+            broadcast('new_item', clipItem);
+          }
+
           broadcast('clipboard_sync', {
-            text: msg.text,
-            from: clientInfo.deviceName || 'Companion'
+            text,
+            from
           }, clientId);
         } else if (msg.type === 'ping') {
           ws.send(JSON.stringify({ type: 'pong' }));
@@ -261,41 +400,56 @@ function createBridgeApp(customOptions = {}) {
     };
 
     items.unshift(item);
+    saveItemsMeta();
     broadcast('new_item', item);
     res.status(201).json({ success: true, item });
   });
 
   // API: Upload files, photos, videos
-  app.post('/api/items/upload', upload.array('files'), (req, res) => {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: 'No files uploaded' });
-    }
+  app.post('/api/items/upload', (req, res) => {
+    upload.array('files')(req, res, (err) => {
+      if (err) {
+        console.error('Upload middleware error:', err);
+        return res.status(400).json({ error: err.message || 'File upload failed' });
+      }
 
-    const sender = req.body.sender || 'Companion';
-    const deviceName = req.body.deviceName || 'Phone';
-    const newItems = [];
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded' });
+      }
 
-    for (const file of req.files) {
-      const itemType = categorizeFileType(file.mimetype, file.originalname);
-      const item = {
-        id: uuidv4(),
-        type: itemType,
-        fileName: file.filename,
-        originalName: file.originalname,
-        size: file.size,
-        formattedSize: formatBytes(file.size),
-        mimetype: file.mimetype,
-        url: `/api/files/${encodeURIComponent(file.filename)}`,
-        createdAt: new Date().toISOString(),
-        sender,
-        deviceName
-      };
-      items.unshift(item);
-      newItems.push(item);
-      broadcast('new_item', item);
-    }
+      const sender = req.body.sender || 'Companion';
+      const deviceName = req.body.deviceName || 'Phone';
+      const newItems = [];
 
-    res.status(201).json({ success: true, items: newItems });
+      for (const file of req.files) {
+        const itemType = categorizeFileType(file.mimetype, file.originalname);
+        let origName = file.originalname;
+        if (!origName || origName === 'blob' || origName === 'blob.bin') {
+          const ext = path.extname(file.filename) || (itemType === 'photo' ? '.png' : '.bin');
+          origName = (itemType === 'photo' ? `photo_${Date.now()}` : `file_${Date.now()}`) + ext;
+        }
+
+        const item = {
+          id: uuidv4(),
+          type: itemType,
+          fileName: file.filename,
+          originalName: origName,
+          size: file.size,
+          formattedSize: formatBytes(file.size),
+          mimetype: file.mimetype || getMimeType(file.filename),
+          url: `/api/files/${encodeURIComponent(file.filename)}`,
+          createdAt: new Date().toISOString(),
+          sender,
+          deviceName
+        };
+        items.unshift(item);
+        newItems.push(item);
+        broadcast('new_item', item);
+      }
+
+      saveItemsMeta();
+      res.status(201).json({ success: true, items: newItems });
+    });
   });
 
   // API: Stream or download file with range request support (important for video streaming)
@@ -310,6 +464,11 @@ function createBridgeApp(customOptions = {}) {
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
     const range = req.headers.range;
+
+    // Resolve accurate mime type and original download name
+    const item = items.find(it => it.fileName === filename);
+    const resolvedMime = req.query.mime || (item && item.mimetype) || getMimeType(filename);
+    const originalDownloadName = req.query.name || (item && item.originalName) || filename;
 
     // Support HTTP 206 for video and audio streaming
     if (range) {
@@ -328,17 +487,19 @@ function createBridgeApp(customOptions = {}) {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize,
-        'Content-Type': req.query.mime || 'application/octet-stream',
+        'Content-Type': resolvedMime,
       };
       res.writeHead(206, head);
       fileStream.pipe(res);
     } else {
       const head = {
         'Content-Length': fileSize,
-        'Content-Type': req.query.mime || 'application/octet-stream',
+        'Content-Type': resolvedMime,
       };
       if (req.query.download === '1') {
-        head['Content-Disposition'] = `attachment; filename="${encodeURIComponent(filename)}"`;
+        const safeAsciiName = originalDownloadName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+        const encodedName = encodeURIComponent(originalDownloadName).replace(/['()]/g, escape).replace(/\*/g, '%2A');
+        head['Content-Disposition'] = `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${encodedName}`;
       }
       res.writeHead(200, head);
       fs.createReadStream(filePath).pipe(res);
@@ -359,8 +520,8 @@ function createBridgeApp(customOptions = {}) {
     }
 
     if (process.platform === 'win32') {
-      exec(`explorer.exe /select,"${fullPath}"`, (err) => {
-        if (err) {
+      execFile('explorer.exe', [`/select,${fullPath}`], (err) => {
+        if (err && err.code !== 1) { // explorer.exe sometimes exits with code 1 even on success
           console.error('Error opening explorer:', err);
           return res.status(500).json({ error: 'Failed to open file explorer' });
         }
@@ -374,8 +535,8 @@ function createBridgeApp(customOptions = {}) {
   // API: Open storage directory in Windows File Explorer
   app.post('/api/open-folder', (req, res) => {
     if (process.platform === 'win32') {
-      exec(`explorer.exe "${storageDir}"`, (err) => {
-        if (err) {
+      execFile('explorer.exe', [storageDir], (err) => {
+        if (err && err.code !== 1) {
           console.error('Error opening folder:', err);
           return res.status(500).json({ error: 'Failed to open storage directory' });
         }
@@ -408,13 +569,27 @@ function createBridgeApp(customOptions = {}) {
       }
     }
 
+    saveItemsMeta();
     broadcast('item_deleted', { id });
     res.json({ success: true, deletedItem });
   });
 
-  // API: Clear all items
+  // API: Clear all items and remove stored files
   app.delete('/api/items', (req, res) => {
+    for (const item of items) {
+      if (item.fileName) {
+        const filePath = path.join(storageDir, item.fileName);
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (e) {
+            console.error('Failed to unlink file during clear:', e);
+          }
+        }
+      }
+    }
     items = [];
+    saveItemsMeta();
     broadcast('items_cleared', {});
     res.json({ success: true });
   });

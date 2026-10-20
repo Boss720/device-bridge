@@ -62,8 +62,13 @@
 - **Node.js** (v18 or higher recommended)
 - Both your Windows PC and your phone connected to the **same local Wi-Fi / LAN network**.
 
-### 2. Start the Windows Desktop App
-To launch the native Windows Electron application:
+### 2. 1-Click Launch Options
+You can start DeviceBridge with a single click using any of the following:
+
+- **Desktop Shortcut**: Double-click the **`DeviceBridge`** shortcut on your Windows Desktop (created via `create-desktop-shortcut.ps1`).
+- **Silent Launcher**: Double-click [`launch-silent.vbs`](file:///d:/AI/projects/Dev/Devicebridge/launch-silent.vbs) to run DeviceBridge in the background without keeping a terminal window open.
+- **Batch Launcher**: Double-click [`launch.bat`](file:///d:/AI/projects/Dev/Devicebridge/launch.bat) (checks for Node.js, auto-installs dependencies if needed, and launches the app).
+- **Command Line**:
 ```powershell
 npm start
 ```
@@ -84,10 +89,25 @@ Visit `http://localhost:53317` on your PC.
 
 ## 🧪 Testing
 
-DeviceBridge includes an automated test suite covering utility helpers, QR code generation, REST APIs, multipart file and media uploads, HTTP 206 video range streaming, item deletion, and real-time WebSocket synchronization:
+DeviceBridge includes an automated test suite covering utility helpers, QR code generation, REST APIs, multipart file and media uploads, HTTP 206 video range streaming, metadata persistence across restarts, disk cleanup, and real-time WebSocket clipboard and feed synchronization:
 
 ```powershell
 npm test
 ```
 
-All 15 automated test cases run with Node.js's native test runner (`node:test`).
+All 20 automated test cases run with Node.js's native test runner (`node:test`).
+
+---
+
+## 📦 Windows x64 Installer & Executable Packaging
+
+To package the production Windows x64 binaries:
+
+```powershell
+# Build NSIS Setup Installer and Standalone Portable .exe
+npm run dist
+```
+
+Generated release artifacts in `dist/`:
+- **`DeviceBridge-Setup-1.0.0-x64.exe`**: Full Windows NSIS installer with desktop & start menu shortcuts and clean uninstaller.
+- **`DeviceBridge-1.0.0-portable-x64.exe`**: Single-file standalone executable with zero installation required.
