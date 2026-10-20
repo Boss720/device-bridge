@@ -1,6 +1,6 @@
 {
   "name": "devicebridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Seamless Windows app + phone companion for instant cross-device transfer of text, files, photos, videos, links, and pasted clipboard content",
   "main": "main.js",
   "scripts": {
@@ -15,13 +15,15 @@
     "productName": "DeviceBridge",
     "copyright": "Copyright © 2026 DeviceBridge",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "main.js",
       "preload.js",
       "server.js",
       "public/**/*",
+      "build/**/*",
       "package.json"
     ],
     "win": {
@@ -39,6 +41,7 @@
           ]
         }
       ],
+      "icon": "build/icon.ico",
       "executableName": "DeviceBridge"
     },
     "nsis": {

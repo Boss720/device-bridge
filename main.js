@@ -62,6 +62,7 @@ function startServer() {
 }
 
 function createWindow() {
+  const iconPath = path.join(__dirname, 'build', 'icon.png');
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 780,
@@ -69,6 +70,7 @@ function createWindow() {
     minHeight: 580,
     title: 'DeviceBridge - Seamless Cross-Device Transfer',
     backgroundColor: '#090d16',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -96,11 +98,15 @@ ipcMain.handle('reveal-in-folder', async (event, filename) => {
 });
 
 ipcMain.handle('open-folder', async () => {
-  if (fs.existsSync(storageDir)) {
+  try {
+    if (!fs.existsSync(storageDir)) {
+      fs.mkdirSync(storageDir, { recursive: true });
+    }
     shell.openPath(storageDir);
     return true;
+  } catch (_) {
+    return false;
   }
-  return false;
 });
 
 ipcMain.handle('read-clipboard', async () => {

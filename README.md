@@ -109,5 +109,5 @@ npm run dist
 ```
 
 Generated release artifacts in `dist/`:
-- **`DeviceBridge-Setup-1.0.0-x64.exe`**: Full Windows NSIS installer with desktop & start menu shortcuts and clean uninstaller.
-- **`DeviceBridge-1.0.0-portable-x64.exe`**: Single-file standalone executable with zero installation required.
+- **`DeviceBridge-Setup-1.0.1-x64.exe`**: Full Windows NSIS installer with desktop & start menu shortcuts, custom DeviceBridge branding, and clean uninstaller.
+- **`DeviceBridge-1.0.1-portable-x64.exe`**: Single-file standalone executable with zero installation required and embedded icon assets.

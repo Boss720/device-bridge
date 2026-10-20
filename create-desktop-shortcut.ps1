@@ -7,6 +7,7 @@ $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = "wscript.exe"
 $Shortcut.Arguments = "`"$ProjectDir\launch-silent.vbs`""
 $Shortcut.WorkingDirectory = $ProjectDir
+$Shortcut.IconLocation = "$ProjectDir\build\icon.ico"
 $Shortcut.Description = "DeviceBridge - Cross-Device Windows & Phone Transfer"
 $Shortcut.Save()
 
